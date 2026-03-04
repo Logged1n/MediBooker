@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/Aspire/">
+    <Project Path="MediBooker.AppHost/MediBooker.AppHost.csproj" />
+    <Project Path="MediBooker.ServiceDefaults/MediBooker.ServiceDefaults.csproj" />
+  </Folder>
+  <Folder Name="/Client/">
+    <Project Path="medibooker.client/medibooker.client.esproj">
+      <Build />
+    </Project>
+  </Folder>
+  <Folder Name="/Server/">
+    <Project Path="MediBooker.Server/MediBooker.Server.csproj" />
+    <Project Path="MediBooker.UnitTests/MediBooker.UnitTests.csproj" />
+  </Folder>
+</Solution>
