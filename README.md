@@ -57,7 +57,7 @@ The system follows clean architectural principles and separation of concerns.
 
 ---
 
-## 📦 Tech Stack (Example – adjust if needed)
+## 📦 Tech Stack
 
 - Frontend: React
 - Backend: ASP.NET Core Web API
