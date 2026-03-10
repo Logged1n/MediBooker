@@ -86,4 +86,16 @@ public class BookingService
 
     public IReadOnlyList<Booking> GetDoctorBookings(string doctorId)
         => _bookingRepo.GetForDoctor(doctorId);
+
+    public IReadOnlyList<Booking> GetRoomSchedule(int roomId, DateOnly date)
+    {
+        var room = _roomRepo.GetById(roomId)
+            ?? throw new KeyNotFoundException($"Room {roomId} not found.");
+
+        return _bookingRepo
+            .GetForRoom(roomId, date)
+            .Where(b => b.Status != BookingStatus.Cancelled)
+            .OrderBy(b => b.StartTime)
+            .ToList();
+    }
 }
