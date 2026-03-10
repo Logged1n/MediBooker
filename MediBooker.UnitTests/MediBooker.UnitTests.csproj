@@ -18,4 +18,8 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\MediBooker.Server\MediBooker.Server.csproj" />
+  </ItemGroup>
+
 </Project>
