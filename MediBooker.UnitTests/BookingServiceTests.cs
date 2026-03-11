@@ -505,4 +505,422 @@ public class BookingServiceTests
 
         Assert.Empty(result);
     }
+
+    [Fact]
+    public void GetAvailableSlots_RoomNotFound_ThrowsKeyNotFoundException()
+    {
+        var service = BuildService();
+
+        Assert.Throws<KeyNotFoundException>(() =>
+            service.GetAvailableSlots(999, Tomorrow, 60));
+    }
+
+    [Fact]
+    public void GetAvailableSlots_InvalidSlotDuration_ThrowsArgumentException()
+    {
+        var service = BuildService();
+
+        Assert.Throws<ArgumentException>(() =>
+            service.GetAvailableSlots(1, Tomorrow, 0));
+    }
+
+    [Fact]
+    public void GetAvailableSlots_NoBookings_ReturnsAllSlots()
+    {
+        var service = BuildService();
+
+        var result = service.GetAvailableSlots(1, Tomorrow, 60);
+
+        Assert.Equal(10, result.Count);
+    }
+
+    [Fact]
+    public void GetAvailableSlots_OneBooking_ExcludesThatSlot()
+    {
+        var repo = new FakeBookingRepository(
+            new Booking
+            {
+                Id = 1,
+                RoomId = 1,
+                DoctorId = "dr-kowalski",
+                Date = Tomorrow,
+                StartTime = new TimeOnly(9, 0),
+                EndTime = new TimeOnly(10, 0),
+                Status = BookingStatus.Upcoming
+            });
+        var service = BuildService(bookingRepo: repo);
+
+        var result = service.GetAvailableSlots(1, Tomorrow, 60);
+
+        Assert.DoesNotContain(result, s => s.Start == new TimeOnly(9, 0));
+    }
+
+    [Fact]
+    public void GetAvailableSlots_CancelledBooking_SlotRemainsAvailable()
+    {
+        var repo = new FakeBookingRepository(
+            new Booking
+            {
+                Id = 1,
+                RoomId = 1,
+                DoctorId = "dr-kowalski",
+                Date = Tomorrow,
+                StartTime = new TimeOnly(9, 0),
+                EndTime = new TimeOnly(10, 0),
+                Status = BookingStatus.Cancelled
+            });
+        var service = BuildService(bookingRepo: repo);
+
+        var result = service.GetAvailableSlots(1, Tomorrow, 60);
+
+        Assert.Contains(result, s => s.Start == new TimeOnly(9, 0));
+    }
+
+    [Fact]
+    public void GetAvailableSlots_FullyBookedDay_ReturnsEmptyList()
+    {
+        var bookings = Enumerable.Range(8, 10).Select(hour => new Booking
+        {
+            Id = hour,
+            RoomId = 1,
+            DoctorId = "dr-kowalski",
+            Date = Tomorrow,
+            StartTime = new TimeOnly(hour, 0),
+            EndTime = new TimeOnly(hour + 1, 0),
+            Status = BookingStatus.Upcoming,
+        }).ToArray();
+        var service = BuildService(bookingRepo: new FakeBookingRepository(bookings));
+
+        var result = service.GetAvailableSlots(1, Tomorrow, 60);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void GetAvailableSlots_SlotsStartAtWorkdayStart()
+    {
+        var service = BuildService();
+
+        var result = service.GetAvailableSlots(1, Tomorrow, 60);
+
+        Assert.Equal(new TimeOnly(8, 0), result.First().Start);
+    }
+
+    [Fact]
+    public void GetAvailableSlots_LastSlotEndsAtWorkdayEnd()
+    {
+        var service = BuildService();
+
+        var result = service.GetAvailableSlots(1, Tomorrow, 60);
+
+        Assert.Equal(new TimeOnly(18, 0), result.Last().End);
+    }
+
+    [Fact]
+    public void GetAvailableSlots_30MinDuration_ReturnsDoubleTheSlots()
+    {
+        var service = BuildService();
+
+        var result = service.GetAvailableSlots(1, Tomorrow, 30);
+
+        Assert.Equal(20, result.Count);
+    }
+
+    [Fact]
+    public void GetAvailableSlots_BookingInMiddleOfDay_SplitsAvailability()
+    {
+        var repo = new FakeBookingRepository(
+            new Booking
+            {
+                Id = 1,
+                RoomId = 1,
+                DoctorId = "dr-kowalski",
+                Date = Tomorrow,
+                StartTime = new TimeOnly(12, 0),
+                EndTime = new TimeOnly(13, 0),
+                Status = BookingStatus.Upcoming
+            });
+        var service = BuildService(bookingRepo: repo);
+
+        var result = service.GetAvailableSlots(1, Tomorrow, 60);
+
+        Assert.Contains(result, s => s.Start == new TimeOnly(11, 0)); // before booking
+        Assert.Contains(result, s => s.Start == new TimeOnly(13, 0)); // after booking
+        Assert.DoesNotContain(result, s => s.Start == new TimeOnly(12, 0));
+    }
+
+    [Fact]
+    public void GetAvailableSlots_SlotDurationLongerThanWorkday_ReturnsEmptyList()
+    {
+        var service = BuildService();
+
+        var result = service.GetAvailableSlots(1, Tomorrow, 660);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void GetAllBookingsForDate_NoBookingsOnDate_ReturnsEmptyList()
+    {
+        var service = BuildService();
+
+        var result = service.GetAllBookingsForDate(Tomorrow);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void GetAllBookingsForDate_ReturnsAllBookingsRegardlessOfRoom()
+    {
+        var roomRepo = new FakeRoomRepository(
+            ActiveRoom,
+            new Room { Id = 2, Name = "Room 202", Type = "Surgery", Floor = 2, IsActive = true });
+        var repo = new FakeBookingRepository(
+            new Booking
+            {
+                Id = 1,
+                RoomId = 1,
+                DoctorId = "dr-kowalski",
+                Date = Tomorrow,
+                StartTime = new TimeOnly(9, 0),
+                EndTime = new TimeOnly(10, 0),
+                Status = BookingStatus.Upcoming
+            },
+            new Booking
+            {
+                Id = 2,
+                RoomId = 2,
+                DoctorId = "dr-nowak",
+                Date = Tomorrow,
+                StartTime = new TimeOnly(10, 0),
+                EndTime = new TimeOnly(11, 0),
+                Status = BookingStatus.Upcoming
+            });
+        var service = BuildService(bookingRepo: repo, roomRepo: roomRepo);
+
+        var result = service.GetAllBookingsForDate(Tomorrow);
+
+        Assert.Equal(2, result.Count);
+    }
+
+    [Fact]
+    public void GetAllBookingsForDate_ReturnsAllBookingsRegardlessOfDoctor()
+    {
+        var repo = new FakeBookingRepository(
+            new Booking
+            {
+                Id = 1,
+                RoomId = 1,
+                DoctorId = "dr-kowalski",
+                Date = Tomorrow,
+                StartTime = new TimeOnly(9, 0),
+                EndTime = new TimeOnly(10, 0),
+                Status = BookingStatus.Upcoming
+            },
+            new Booking
+            {
+                Id = 2,
+                RoomId = 1,
+                DoctorId = "dr-nowak",
+                Date = Tomorrow,
+                StartTime = new TimeOnly(11, 0),
+                EndTime = new TimeOnly(12, 0),
+                Status = BookingStatus.Upcoming
+            });
+        var service = BuildService(bookingRepo: repo);
+
+        var result = service.GetAllBookingsForDate(Tomorrow);
+
+        Assert.Equal(2, result.Count);
+    }
+
+    [Fact]
+    public void GetAllBookingsForDate_IncludesAllStatuses()
+    {
+        var repo = new FakeBookingRepository(
+            new Booking
+            {
+                Id = 1,
+                RoomId = 1,
+                DoctorId = "dr-kowalski",
+                Date = Tomorrow,
+                StartTime = new TimeOnly(8, 0),
+                EndTime = new TimeOnly(9, 0),
+                Status = BookingStatus.Upcoming
+            },
+            new Booking
+            {
+                Id = 2,
+                RoomId = 1,
+                DoctorId = "dr-nowak",
+                Date = Tomorrow,
+                StartTime = new TimeOnly(9, 0),
+                EndTime = new TimeOnly(10, 0),
+                Status = BookingStatus.Active
+            },
+            new Booking
+            {
+                Id = 3,
+                RoomId = 1,
+                DoctorId = "dr-nowak",
+                Date = Tomorrow,
+                StartTime = new TimeOnly(10, 0),
+                EndTime = new TimeOnly(11, 0),
+                Status = BookingStatus.Completed
+            },
+            new Booking
+            {
+                Id = 4,
+                RoomId = 1,
+                DoctorId = "dr-nowak",
+                Date = Tomorrow,
+                StartTime = new TimeOnly(11, 0),
+                EndTime = new TimeOnly(12, 0),
+                Status = BookingStatus.Cancelled
+            });
+        var service = BuildService(bookingRepo: repo);
+
+        var result = service.GetAllBookingsForDate(Tomorrow);
+
+        Assert.Equal(4, result.Count);
+    }
+
+    [Fact]
+    public void GetAllBookingsForDate_DoesNotReturnBookingsFromOtherDates()
+    {
+        var repo = new FakeBookingRepository(
+            new Booking
+            {
+                Id = 1,
+                RoomId = 1,
+                DoctorId = "dr-kowalski",
+                Date = Tomorrow.AddDays(1),
+                StartTime = new TimeOnly(9, 0),
+                EndTime = new TimeOnly(10, 0),
+                Status = BookingStatus.Upcoming
+            });
+        var service = BuildService(bookingRepo: repo);
+
+        var result = service.GetAllBookingsForDate(Tomorrow);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void GetAllBookingsForDate_ReturnsSortedByStartTime()
+    {
+        var repo = new FakeBookingRepository(
+            new Booking
+            {
+                Id = 2,
+                RoomId = 1,
+                DoctorId = "dr-nowak",
+                Date = Tomorrow,
+                StartTime = new TimeOnly(12, 0),
+                EndTime = new TimeOnly(13, 0),
+                Status = BookingStatus.Upcoming
+            },
+            new Booking
+            {
+                Id = 1,
+                RoomId = 1,
+                DoctorId = "dr-kowalski",
+                Date = Tomorrow,
+                StartTime = new TimeOnly(8, 0),
+                EndTime = new TimeOnly(9, 0),
+                Status = BookingStatus.Upcoming
+            });
+        var service = BuildService(bookingRepo: repo);
+
+        var result = service.GetAllBookingsForDate(Tomorrow);
+
+        Assert.Equal(new TimeOnly(8, 0), result[0].StartTime);
+        Assert.Equal(new TimeOnly(12, 0), result[1].StartTime);
+    }
+
+    [Fact]
+    public void GetAllBookingsForDate_TodayDate_ReturnsBookingsForToday()
+    {
+        var repo = new FakeBookingRepository(
+            new Booking
+            {
+                Id = 1,
+                RoomId = 1,
+                DoctorId = "dr-kowalski",
+                Date = Today,
+                StartTime = new TimeOnly(9, 0),
+                EndTime = new TimeOnly(10, 0),
+                Status = BookingStatus.Active
+            });
+        var service = BuildService(bookingRepo: repo);
+
+        var result = service.GetAllBookingsForDate(Today);
+
+        Assert.Single(result);
+    }
+
+    [Fact]
+    public void GetAllBookingsForDate_PastDate_ReturnsHistoricalBookings()
+    {
+        var yesterday = Today.AddDays(-1);
+        var repo = new FakeBookingRepository(
+            new Booking
+            {
+                Id = 1,
+                RoomId = 1,
+                DoctorId = "dr-kowalski",
+                Date = yesterday,
+                StartTime = new TimeOnly(9, 0),
+                EndTime = new TimeOnly(10, 0),
+                Status = BookingStatus.Completed
+            });
+        var service = BuildService(bookingRepo: repo);
+
+        var result = service.GetAllBookingsForDate(yesterday);
+
+        Assert.Single(result);
+        Assert.Equal(BookingStatus.Completed, result[0].Status);
+    }
+
+    [Fact]
+    public void GetAllBookingsForDate_ManyDates_ReturnsOnlyRequestedDate()
+    {
+        var repo = new FakeBookingRepository(
+            new Booking
+            {
+                Id = 1,
+                RoomId = 1,
+                DoctorId = "dr-kowalski",
+                Date = Tomorrow,
+                StartTime = new TimeOnly(9, 0),
+                EndTime = new TimeOnly(10, 0),
+                Status = BookingStatus.Upcoming
+            },
+            new Booking
+            {
+                Id = 2,
+                RoomId = 1,
+                DoctorId = "dr-nowak",
+                Date = Tomorrow.AddDays(1),
+                StartTime = new TimeOnly(9, 0),
+                EndTime = new TimeOnly(10, 0),
+                Status = BookingStatus.Upcoming
+            },
+            new Booking
+            {
+                Id = 3,
+                RoomId = 1,
+                DoctorId = "dr-nowak",
+                Date = Tomorrow.AddDays(2),
+                StartTime = new TimeOnly(9, 0),
+                EndTime = new TimeOnly(10, 0),
+                Status = BookingStatus.Upcoming
+            });
+        var service = BuildService(bookingRepo: repo);
+
+        var result = service.GetAllBookingsForDate(Tomorrow);
+
+        Assert.Single(result);
+        Assert.Equal(1, result[0].Id);
+    }
 }

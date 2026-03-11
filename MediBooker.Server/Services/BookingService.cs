@@ -98,4 +98,47 @@ public class BookingService
             .OrderBy(b => b.StartTime)
             .ToList();
     }
+
+    private static readonly TimeOnly WorkdayStart = new(8, 0);
+    private static readonly TimeOnly WorkdayEnd = new(18, 0);
+
+    public IReadOnlyList<(TimeOnly Start, TimeOnly End)> GetAvailableSlots(
+        int roomId, DateOnly date, int slotDurationMinutes)
+    {
+        _ = _roomRepo.GetById(roomId)
+            ?? throw new KeyNotFoundException($"Room {roomId} not found.");
+
+        if (slotDurationMinutes <= 0)
+            throw new ArgumentException("Slot duration must be greater than 0.");
+
+        var bookedSlots = _bookingRepo
+            .GetForRoom(roomId, date)
+            .Where(b => b.Status != BookingStatus.Cancelled)
+            .ToList();
+
+        var available = new List<(TimeOnly Start, TimeOnly End)>();
+        var slotStart = WorkdayStart;
+
+        while (slotStart.AddMinutes(slotDurationMinutes) <= WorkdayEnd)
+        {
+            var slotEnd = slotStart.AddMinutes(slotDurationMinutes);
+
+            var isOccupied = bookedSlots
+                .Any(b => slotStart < b.EndTime && slotEnd > b.StartTime);
+
+            if (!isOccupied)
+                available.Add((slotStart, slotEnd));
+
+            slotStart = slotStart.AddMinutes(slotDurationMinutes);
+        }
+
+        return available;
+    }
+
+    public IReadOnlyList<Booking> GetAllBookingsForDate(DateOnly date)
+        => _bookingRepo
+            .GetForDate(date)
+            .OrderBy(b => b.StartTime)
+            .ToList();
+
 }

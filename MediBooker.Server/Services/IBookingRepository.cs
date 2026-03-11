@@ -10,4 +10,5 @@ public interface IBookingRepository
     void Add(Booking booking);
     void Update(Booking booking);
     int NextId();
+    IReadOnlyList<Booking> GetForDate(DateOnly date);
 }

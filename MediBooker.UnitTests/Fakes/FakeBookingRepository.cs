@@ -25,4 +25,8 @@ public class FakeBookingRepository : IBookingRepository
     public void Update(Booking booking) { }
 
     public int NextId() => _nextId++;
+
+    public IReadOnlyList<Booking> GetForDate(DateOnly date) =>
+    _bookings.Where(b => b.Date == date).ToList();
+
 }
