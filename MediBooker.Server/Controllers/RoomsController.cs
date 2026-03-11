@@ -1,20 +1,33 @@
-﻿using MediBooker.Server.Models;
 using MediBooker.Server.Services;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace MediBooker.Server.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize]
 public class RoomsController : ControllerBase
 {
     private readonly BookingService _bookingService;
+    private readonly IRoomRepository _roomRepo;
 
-    public RoomsController(BookingService bookingService)
+    public RoomsController(BookingService bookingService, IRoomRepository roomRepo)
     {
         _bookingService = bookingService;
+        _roomRepo = roomRepo;
+    }
+
+    [HttpGet]
+    public IActionResult GetAll()
+    {
+        var rooms = _roomRepo.GetAll();
+        return Ok(rooms.Select(r => new
+        {
+            r.Id,
+            r.Name,
+            r.Type,
+            r.Floor,
+            available = r.IsActive
+        }));
     }
 
     [HttpGet("{id:int}/schedule")]

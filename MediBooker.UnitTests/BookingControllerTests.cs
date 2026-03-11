@@ -27,7 +27,7 @@ public class BookingsControllerTests
             roomRepo ?? new FakeRoomRepository(ActiveRoom),
             new FakeDateTimeProvider(Today));
 
-        var sut = new BookingsController(service);
+        var sut = new BookingsController(service, roomRepo ?? new FakeRoomRepository(ActiveRoom));
         var claims = new[] { new Claim(ClaimTypes.NameIdentifier, userId) };
         var identity = new ClaimsIdentity(claims, "Test");
         sut.ControllerContext = new ControllerContext
@@ -60,7 +60,7 @@ public class BookingsControllerTests
         var result = sut.GetMyBookings();
 
         var ok = Assert.IsType<OkObjectResult>(result);
-        var body = Assert.IsAssignableFrom<IReadOnlyList<Booking>>(ok.Value);
+        var body = Assert.IsAssignableFrom<IEnumerable<BookingResponseDto>>(ok.Value).ToList();
         Assert.Equal(2, body.Count);
         Assert.All(body, b => Assert.Equal("doc-kowalski", b.DoctorId));
     }
@@ -73,7 +73,7 @@ public class BookingsControllerTests
         var result = sut.GetMyBookings();
 
         var ok = Assert.IsType<OkObjectResult>(result);
-        var body = Assert.IsAssignableFrom<IReadOnlyList<Booking>>(ok.Value);
+        var body = Assert.IsAssignableFrom<IEnumerable<BookingResponseDto>>(ok.Value);
         Assert.Empty(body);
     }
 
@@ -86,9 +86,9 @@ public class BookingsControllerTests
 
         var created = Assert.IsType<CreatedAtActionResult>(result);
         Assert.Equal(201, created.StatusCode);
-        var booking = Assert.IsType<Booking>(created.Value);
-        Assert.Equal("doc-kowalski", booking.DoctorId);
-        Assert.Equal(BookingStatus.Upcoming, booking.Status);
+        var dto = Assert.IsType<BookingResponseDto>(created.Value);
+        Assert.Equal("doc-kowalski", dto.DoctorId);
+        Assert.Equal("upcoming", dto.Status);
     }
 
     [Fact]

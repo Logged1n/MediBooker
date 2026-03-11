@@ -10,4 +10,5 @@ public class FakeRoomRepository : IRoomRepository
     public FakeRoomRepository(params Room[] rooms) => _rooms = [.. rooms];
 
     public Room? GetById(int id) => _rooms.FirstOrDefault(r => r.Id == id);
+    public IReadOnlyList<Room> GetAll() => _rooms.ToList();
 }

@@ -26,7 +26,7 @@ public class RoomsControllerTests
             roomRepo ?? new FakeRoomRepository(Room1),
             new FakeDateTimeProvider(Today));
 
-        var sut = new RoomsController(service);
+        var sut = new RoomsController(service, roomRepo ?? new FakeRoomRepository(Room1));
         var claims = new[] { new Claim(ClaimTypes.NameIdentifier, "doc-kowalski") };
         var identity = new ClaimsIdentity(claims, "Test");
         sut.ControllerContext = new ControllerContext
@@ -85,7 +85,7 @@ public class RoomsControllerTests
 
         var ok = Assert.IsType<OkObjectResult>(result);
         var body = Assert.IsAssignableFrom<IReadOnlyList<Booking>>(ok.Value);
-        Assert.Equal(1, body.Count);
+        Assert.Single(body);
         Assert.DoesNotContain(body, b => b.Status == BookingStatus.Cancelled);
     }
 

@@ -1,21 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import './App.css';
-
-const mockRooms = [
-  { id: 1, name: 'Room 101', type: 'Examination', floor: 1, available: true },
-  { id: 2, name: 'Room 203', type: 'Surgery', floor: 2, available: false },
-  { id: 3, name: 'Room 115', type: 'Consultation', floor: 1, available: true },
-  { id: 4, name: 'Room 302', type: 'Radiology', floor: 3, available: true },
-  { id: 5, name: 'Room 210', type: 'ICU', floor: 2, available: false },
-  { id: 6, name: 'Room 118', type: 'Consultation', floor: 1, available: true },
-];
-
-const mockBookings = [
-  { id: 1, room: 'Room 203', doctor: 'Dr. Kowalski', date: '2026-03-05', time: '09:00 – 10:00', status: 'active' },
-  { id: 2, room: 'Room 210', doctor: 'Dr. Nowak', date: '2026-03-05', time: '11:00 – 12:30', status: 'active' },
-  { id: 3, room: 'Room 101', doctor: 'Dr. Wiśniewska', date: '2026-03-04', time: '14:00 – 15:00', status: 'completed' },
-  { id: 4, room: 'Room 115', doctor: 'Dr. Kowalski', date: '2026-03-06', time: '08:00 – 09:00', status: 'upcoming' },
-];
+import { api, CURRENT_DOCTOR_NAME, CURRENT_DOCTOR_ID } from './api';
 
 const roomTypeIcon = {
   Examination: '🔬',
@@ -45,7 +30,7 @@ function Navbar({ activeNav, setActiveNav }) {
       </div>
       <div className="navbar-user">
         <span className="user-avatar">👤</span>
-        <span className="user-name">Dr. Kowalski</span>
+        <span className="user-name">{CURRENT_DOCTOR_NAME}</span>
         <span className="user-role">Doctor</span>
       </div>
     </nav>
@@ -70,7 +55,7 @@ function RoomCard({ room, onBook }) {
       <div className="room-header">
         <span className="room-type-icon">{roomTypeIcon[room.type] || '🚪'}</span>
         <span className={`room-status-badge ${room.available ? 'badge-available' : 'badge-occupied'}`}>
-          {room.available ? 'Available' : 'Occupied'}
+          {room.available ? 'Available' : 'Unavailable'}
         </span>
       </div>
       <div className="room-name">{room.name}</div>
@@ -89,40 +74,57 @@ function RoomCard({ room, onBook }) {
   );
 }
 
-function BookingRow({ booking }) {
+function BookingRow({ booking, onCancel }) {
   const statusClass = {
     active: 'status-active',
     completed: 'status-completed',
     upcoming: 'status-upcoming',
-  }[booking.status];
+    cancelled: 'status-cancelled',
+  }[booking.status] ?? '';
 
   return (
     <tr className="booking-row">
-      <td>{booking.room}</td>
-      <td>{booking.doctor}</td>
+      <td>{booking.roomName}</td>
+      <td>{booking.doctorId}</td>
       <td>{booking.date}</td>
-      <td>{booking.time}</td>
+      <td>{booking.startTime} – {booking.endTime}</td>
       <td><span className={`status-badge ${statusClass}`}>{booking.status}</span></td>
       <td>
-        {booking.status !== 'completed' && (
-          <button className="btn-cancel">Cancel</button>
+        {(booking.status === 'upcoming' || booking.status === 'active') && (
+          <button className="btn-cancel" onClick={() => onCancel(booking.id)}>Cancel</button>
         )}
       </td>
     </tr>
   );
 }
 
-function BookingModal({ room, onClose }) {
+function BookingModal({ room, onClose, onBooked }) {
   const [date, setDate] = useState('');
   const [timeFrom, setTimeFrom] = useState('');
   const [timeTo, setTimeTo] = useState('');
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
-    setSubmitted(true);
-    setTimeout(onClose, 1500);
+    setError('');
+    setSubmitting(true);
+    try {
+      await api.createBooking({ roomId: room.id, date, startTime: timeFrom, endTime: timeTo });
+      setSubmitted(true);
+      setTimeout(() => {
+        onBooked();
+        onClose();
+      }, 1200);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
   }
+
+  const today = new Date().toISOString().split('T')[0];
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -142,10 +144,15 @@ function BookingModal({ room, onClose }) {
               <span>{roomTypeIcon[room.type]} {room.type}</span>
               <span>Floor {room.floor}</span>
             </div>
+            {error && (
+              <div style={{ color: '#e53e3e', marginBottom: '0.75rem', fontSize: '0.9rem' }}>
+                {error}
+              </div>
+            )}
             <form className="modal-form" onSubmit={handleSubmit}>
               <label>
                 Date
-                <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+                <input type="date" value={date} min={today} onChange={(e) => setDate(e.target.value)} required />
               </label>
               <div className="time-row">
                 <label>
@@ -157,7 +164,9 @@ function BookingModal({ room, onClose }) {
                   <input type="time" value={timeTo} onChange={(e) => setTimeTo(e.target.value)} required />
                 </label>
               </div>
-              <button type="submit" className="btn-confirm">Confirm Booking</button>
+              <button type="submit" className="btn-confirm" disabled={submitting}>
+                {submitting ? 'Booking…' : 'Confirm Booking'}
+              </button>
             </form>
           </>
         )}
@@ -166,68 +175,82 @@ function BookingModal({ room, onClose }) {
   );
 }
 
-function Dashboard({ onBook }) {
-  const available = mockRooms.filter((r) => r.available).length;
-  const occupied = mockRooms.length - available;
-  const myBookings = mockBookings.filter((b) => b.doctor === 'Dr. Kowalski').length;
+function BookingsTable({ bookings, loading, onCancel, showCancel = true }) {
+  if (loading) return <p style={{ color: '#888', padding: '1rem' }}>Loading…</p>;
+  return (
+    <div className="table-wrapper">
+      <table className="bookings-table">
+        <thead>
+          <tr>
+            <th>Room</th>
+            <th>Doctor</th>
+            <th>Date</th>
+            <th>Time</th>
+            <th>Status</th>
+            {showCancel && <th>Action</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {bookings.length === 0 ? (
+            <tr>
+              <td colSpan={showCancel ? 6 : 5} style={{ textAlign: 'center', color: '#888', padding: '1.5rem' }}>
+                No bookings found.
+              </td>
+            </tr>
+          ) : (
+            bookings.map((b) => (
+              <BookingRow key={b.id} booking={b} onCancel={onCancel ?? (() => {})} />
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function Dashboard({ rooms, todayBookings, onBook, loading }) {
+  const available = rooms.filter((r) => r.available).length;
+  const occupied = rooms.length - available;
+  const myCount = todayBookings.filter((b) => b.doctorId === CURRENT_DOCTOR_ID).length;
 
   return (
     <div className="dashboard">
       <div className="page-title">
         <h1>Dashboard</h1>
-        <p>Welcome back, Dr. Kowalski. Here's today's overview.</p>
+        <p>Welcome back, {CURRENT_DOCTOR_NAME}. Here&apos;s today&apos;s overview.</p>
       </div>
-
       <div className="stats-row">
         <StatCard icon="🟢" label="Available Rooms" value={available} accent="accent-green" />
         <StatCard icon="🔴" label="Occupied Rooms" value={occupied} accent="accent-red" />
-        <StatCard icon="📅" label="My Bookings" value={myBookings} accent="accent-blue" />
-        <StatCard icon="🏥" label="Total Rooms" value={mockRooms.length} accent="accent-purple" />
+        <StatCard icon="📅" label="My Bookings Today" value={myCount} accent="accent-blue" />
+        <StatCard icon="🏥" label="Total Rooms" value={rooms.length} accent="accent-purple" />
       </div>
-
       <section className="section">
         <div className="section-header">
           <h2>Available Rooms</h2>
           <span className="section-count">{available} available</span>
         </div>
-        <div className="rooms-grid">
-          {mockRooms.filter((r) => r.available).map((room) => (
-            <RoomCard key={room.id} room={room} onBook={onBook} />
-          ))}
-        </div>
+        {loading ? (
+          <p style={{ color: '#888', padding: '1rem' }}>Loading rooms…</p>
+        ) : (
+          <div className="rooms-grid">
+            {rooms.filter((r) => r.available).map((room) => (
+              <RoomCard key={room.id} room={room} onBook={onBook} />
+            ))}
+          </div>
+        )}
       </section>
-
       <section className="section">
-        <div className="section-header">
-          <h2>Recent Bookings</h2>
-        </div>
-        <div className="table-wrapper">
-          <table className="bookings-table">
-            <thead>
-              <tr>
-                <th>Room</th>
-                <th>Doctor</th>
-                <th>Date</th>
-                <th>Time</th>
-                <th>Status</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {mockBookings.map((b) => (
-                <BookingRow key={b.id} booking={b} />
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <div className="section-header"><h2>Today&apos;s Bookings</h2></div>
+        <BookingsTable bookings={todayBookings} loading={loading} showCancel={false} />
       </section>
     </div>
   );
 }
 
-function RoomsPage({ onBook }) {
+function RoomsPage({ rooms, onBook, loading }) {
   const [filter, setFilter] = useState('all');
-  const filtered = mockRooms.filter((r) =>
+  const filtered = rooms.filter((r) =>
     filter === 'all' ? true : filter === 'available' ? r.available : !r.available
   );
 
@@ -248,47 +271,32 @@ function RoomsPage({ onBook }) {
           </button>
         ))}
       </div>
-      <div className="rooms-grid rooms-grid-full">
-        {filtered.map((room) => (
-          <RoomCard key={room.id} room={room} onBook={onBook} />
-        ))}
-      </div>
+      {loading ? (
+        <p style={{ color: '#888', padding: '1rem' }}>Loading rooms…</p>
+      ) : (
+        <div className="rooms-grid rooms-grid-full">
+          {filtered.map((room) => (
+            <RoomCard key={room.id} room={room} onBook={onBook} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-function MyBookingsPage() {
-  const mine = mockBookings.filter((b) => b.doctor === 'Dr. Kowalski');
+function MyBookingsPage({ bookings, onCancel, loading }) {
   return (
     <div className="dashboard">
       <div className="page-title">
         <h1>My Bookings</h1>
         <p>Manage your reservations.</p>
       </div>
-      <div className="table-wrapper">
-        <table className="bookings-table">
-          <thead>
-            <tr>
-              <th>Room</th>
-              <th>Doctor</th>
-              <th>Date</th>
-              <th>Time</th>
-              <th>Status</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {mine.map((b) => (
-              <BookingRow key={b.id} booking={b} />
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <BookingsTable bookings={bookings} loading={loading} onCancel={onCancel} showCancel />
     </div>
   );
 }
 
-function AdminPage() {
+function AdminPage({ allBookings, onCancel, loading }) {
   return (
     <div className="dashboard">
       <div className="page-title">
@@ -321,28 +329,9 @@ function AdminPage() {
           <button className="btn-admin">Open</button>
         </div>
       </div>
-
       <section className="section">
         <div className="section-header"><h2>All Reservations</h2></div>
-        <div className="table-wrapper">
-          <table className="bookings-table">
-            <thead>
-              <tr>
-                <th>Room</th>
-                <th>Doctor</th>
-                <th>Date</th>
-                <th>Time</th>
-                <th>Status</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {mockBookings.map((b) => (
-                <BookingRow key={b.id} booking={b} />
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <BookingsTable bookings={allBookings} loading={loading} onCancel={onCancel} showCancel />
       </section>
     </div>
   );
@@ -351,12 +340,74 @@ function AdminPage() {
 export default function App() {
   const [activeNav, setActiveNav] = useState('Dashboard');
   const [bookingRoom, setBookingRoom] = useState(null);
+  const [rooms, setRooms] = useState([]);
+  const [myBookings, setMyBookings] = useState([]);
+  const [todayBookings, setTodayBookings] = useState([]);
+  const [loadingRooms, setLoadingRooms] = useState(true);
+  const [loadingMyBookings, setLoadingMyBookings] = useState(false);
+  const [loadingAll, setLoadingAll] = useState(true);
+
+  const today = new Date().toISOString().split('T')[0];
+
+  const fetchRooms = useCallback(async () => {
+    setLoadingRooms(true);
+    try { setRooms(await api.getRooms()); }
+    catch (e) { console.error('Failed to load rooms', e); }
+    finally { setLoadingRooms(false); }
+  }, []);
+
+  const fetchMyBookings = useCallback(async () => {
+    setLoadingMyBookings(true);
+    try { setMyBookings(await api.getMyBookings()); }
+    catch (e) { console.error('Failed to load my bookings', e); }
+    finally { setLoadingMyBookings(false); }
+  }, []);
+
+  const fetchTodayBookings = useCallback(async () => {
+    setLoadingAll(true);
+    try { setTodayBookings(await api.getAllBookings(today)); }
+    catch (e) { console.error('Failed to load today bookings', e); }
+    finally { setLoadingAll(false); }
+  }, [today]);
+
+  useEffect(() => {
+    fetchRooms();
+    fetchTodayBookings();
+  }, [fetchRooms, fetchTodayBookings]);
+
+  useEffect(() => {
+    if (activeNav === 'My Bookings') fetchMyBookings();
+    if (activeNav === 'Admin') fetchTodayBookings();
+  }, [activeNav, fetchMyBookings, fetchTodayBookings]);
+
+  async function handleCancel(id) {
+    try {
+      await api.cancelBooking(id);
+      fetchMyBookings();
+      fetchTodayBookings();
+    } catch (e) {
+      alert(`Cancel failed: ${e.message}`);
+    }
+  }
+
+  function handleBooked() {
+    fetchMyBookings();
+    fetchTodayBookings();
+  }
 
   const pages = {
-    Dashboard: <Dashboard onBook={setBookingRoom} />,
-    Rooms: <RoomsPage onBook={setBookingRoom} />,
-    'My Bookings': <MyBookingsPage />,
-    Admin: <AdminPage />,
+    Dashboard: (
+      <Dashboard rooms={rooms} todayBookings={todayBookings} onBook={setBookingRoom} loading={loadingRooms || loadingAll} />
+    ),
+    Rooms: (
+      <RoomsPage rooms={rooms} onBook={setBookingRoom} loading={loadingRooms} />
+    ),
+    'My Bookings': (
+      <MyBookingsPage bookings={myBookings} onCancel={handleCancel} loading={loadingMyBookings} />
+    ),
+    Admin: (
+      <AdminPage allBookings={todayBookings} onCancel={handleCancel} loading={loadingAll} />
+    ),
   };
 
   return (
@@ -366,7 +417,7 @@ export default function App() {
         {pages[activeNav]}
       </main>
       {bookingRoom && (
-        <BookingModal room={bookingRoom} onClose={() => setBookingRoom(null)} />
+        <BookingModal room={bookingRoom} onClose={() => setBookingRoom(null)} onBooked={handleBooked} />
       )}
     </div>
   );
