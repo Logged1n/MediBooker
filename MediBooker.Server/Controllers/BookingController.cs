@@ -11,17 +11,32 @@ public class BookingsController : ControllerBase
 {
     private readonly BookingService _bookingService;
     private readonly IRoomRepository _roomRepo;
+    private readonly IDateTimeProvider _dateTime;
 
-    public BookingsController(BookingService bookingService, IRoomRepository roomRepo)
+    public BookingsController(BookingService bookingService, IRoomRepository roomRepo, IDateTimeProvider dateTime)
     {
         _bookingService = bookingService;
         _roomRepo = roomRepo;
+        _dateTime = dateTime;
     }
 
     private string GetDoctorId()
         => User.FindFirstValue(ClaimTypes.NameIdentifier)
            ?? Request.Headers["X-Doctor-Id"].FirstOrDefault()
            ?? "anonymous";
+
+    private BookingStatus ComputeStatus(Booking b)
+    {
+        if (b.Status == BookingStatus.Cancelled) return BookingStatus.Cancelled;
+
+        var today = _dateTime.Today;
+        var now   = _dateTime.Now;
+
+        if (b.Date < today) return BookingStatus.Completed;
+        if (b.Date == today && now >= b.EndTime)   return BookingStatus.Completed;
+        if (b.Date == today && now >= b.StartTime) return BookingStatus.Active;
+        return BookingStatus.Upcoming;
+    }
 
     private BookingResponseDto ToDto(Booking b)
     {
@@ -34,7 +49,7 @@ public class BookingsController : ControllerBase
             b.Date.ToString("yyyy-MM-dd"),
             b.StartTime.ToString("HH:mm"),
             b.EndTime.ToString("HH:mm"),
-            b.Status.ToString().ToLower()
+            ComputeStatus(b).ToString().ToLower()
         );
     }
 

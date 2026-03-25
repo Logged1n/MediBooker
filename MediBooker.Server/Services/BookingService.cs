@@ -55,7 +55,7 @@ public class BookingService
         {
             Id        = _bookingRepo.NextId(),
             RoomId    = request.RoomId,
-            DoctorId  = request.DoctorId,
+            DoctorId  = request.DoctorId ?? string.Empty,
             Date      = request.Date,
             StartTime = request.StartTime,
             EndTime   = request.EndTime,

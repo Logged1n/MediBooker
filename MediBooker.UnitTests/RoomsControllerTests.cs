@@ -26,7 +26,7 @@ public class RoomsControllerTests
             roomRepo ?? new FakeRoomRepository(Room1),
             new FakeDateTimeProvider(Today));
 
-        var sut = new RoomsController(service, roomRepo ?? new FakeRoomRepository(Room1));
+        var sut = new RoomsController(service, roomRepo ?? new FakeRoomRepository(Room1), new FakeDateTimeProvider(Today));
         var claims = new[] { new Claim(ClaimTypes.NameIdentifier, "doc-kowalski") };
         var identity = new ClaimsIdentity(claims, "Test");
         sut.ControllerContext = new ControllerContext

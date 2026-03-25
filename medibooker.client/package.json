@@ -9,7 +9,10 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "jest --config jest.config.cjs",
-    "test:watch": "jest --config jest.config.cjs --watch"
+    "test:watch": "jest --config jest.config.cjs --watch",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:report": "playwright show-report"
   },
   "dependencies": {
     "react": "^19.2.0",
@@ -35,6 +38,7 @@
     "jest": "^30.2.0",
     "jest-environment-jsdom": "^30.2.0",
     "typescript": "^5.9.3",
-    "vite": "^7.3.1"
+    "vite": "^7.3.1",
+    "@playwright/test": "^1.50.0"
   }
 }
