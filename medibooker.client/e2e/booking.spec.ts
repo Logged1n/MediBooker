@@ -1,5 +1,5 @@
 import { test, expect, request as playwrightRequest } from '@playwright/test';
-import { getTomorrow, loginAs } from './helpers';
+import { getTomorrow, toLocalDateStr, loginAs } from './helpers';
 
 // Test 4 — Pomyślna rezerwacja aktywnej sali
 test('lekarz może pomyślnie zarezerwować aktywną salę', async ({ page }) => {
@@ -72,6 +72,7 @@ test('modal rezerwacji wyświetla dostępne sloty po wybraniu daty', async ({ pa
   await loginAs(page, 'dr-kowalski', 'pass123');
 
   await page.getByTestId('nav-rooms').click();
+  await page.getByTestId('filter-available').click();
   await page.getByTestId('btn-book').first().click();
   await expect(page.getByTestId('booking-modal')).toBeVisible();
 
@@ -94,10 +95,27 @@ test('lekarz nie może anulować rezerwacji należącej do innego lekarza', asyn
   //    Zapobiega konfliktom gdy serwer jest reużywany między uruchomieniami testów
   const d = new Date();
   d.setDate(d.getDate() + 7);
-  const futureDate = d.toISOString().split('T')[0];
+  const futureDate = toLocalDateStr(d);
   const startHour = 8 + (new Date().getSeconds() % 9); // losowa godzina 8-16
   const startTime = `${String(startHour).padStart(2, '0')}:00:00`;
   const endTime   = `${String(startHour + 1).padStart(2, '0')}:00:00`;
+
+  // Anuluj istniejące rezerwacje dr-smitha dla sali 2 w tym dniu, aby uniknąć konfliktu
+  const existingRes = await ctx.get('https://localhost:7075/api/bookings/my', {
+    headers: { 'X-Doctor-Id': 'dr-smith' },
+  });
+  if (existingRes.ok()) {
+    const existing = await existingRes.json();
+    const conflicts = existing.filter(
+      (b: { roomId: number; date: string; status: string }) =>
+        b.roomId === 2 && b.date === futureDate && b.status !== 'cancelled'
+    );
+    for (const b of conflicts) {
+      await ctx.delete(`https://localhost:7075/api/bookings/${b.id}`, {
+        headers: { 'X-Doctor-Id': 'dr-smith' },
+      });
+    }
+  }
 
   const createRes = await ctx.post('https://localhost:7075/api/bookings', {
     headers: { 'Content-Type': 'application/json', 'X-Doctor-Id': 'dr-smith' },
@@ -150,6 +168,7 @@ test('lekarz może anulować własną rezerwację', async ({ page }) => {
 
   // Utwórz rezerwację
   await page.getByTestId('nav-rooms').click();
+  await page.getByTestId('filter-available').click();
   await page.getByTestId('btn-book').first().click();
   await page.getByTestId('input-date').fill(getTomorrow());
   await expect(page.getByTestId('slots-list')).toBeVisible();

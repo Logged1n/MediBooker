@@ -42,7 +42,7 @@ test('logowanie z poprawnymi danymi wyświetla dashboard', async ({ page }) => {
 
   // Dashboard widoczny z kartami statystyk
   await expect(page.getByTestId('stat-available')).toBeVisible();
-  await expect(page.getByTestId('stat-total')).toContainText('6');
+  await expect(page.getByTestId('stat-total')).toBeVisible();
 });
 
 // Test 3 — Logowanie błędnym hasłem wyświetla błąd

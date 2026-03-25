@@ -9,10 +9,10 @@ test.describe('Room Filtering and Search', () => {
 
   // Test 1 — Wyszukiwanie po nazwie
   test('doctor can search for a room by name', async ({ page }) => {
-    await page.getByTestId('search-rooms').fill('101');
+    await page.getByTestId('search-rooms').fill('203');
     const cards = page.getByTestId('room-card');
     await expect(cards).toHaveCount(1);
-    await expect(cards.first()).toContainText('Room 101');
+    await expect(cards.first()).toContainText('Room 203');
   });
 
   // Test 2 — Filtrowanie po typie
