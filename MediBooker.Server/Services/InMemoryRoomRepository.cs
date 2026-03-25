@@ -19,4 +19,24 @@ public class InMemoryRoomRepository : IRoomRepository
 
     public IReadOnlyList<Room> GetAll()
         => _rooms.AsReadOnly();
+
+    public void Add(Room room)
+    {
+        room.Id = _rooms.Count > 0 ? _rooms.Max(r => r.Id) + 1 : 1;
+        _rooms.Add(room);
+    }
+
+    public void Update(Room room)
+    {
+        var index = _rooms.FindIndex(r => r.Id == room.Id);
+        if (index != -1)
+        {
+            _rooms[index] = room;
+        }
+    }
+
+    public void Delete(int id)
+    {
+        _rooms.RemoveAll(r => r.Id == id);
+    }
 }

@@ -13,6 +13,7 @@ export interface Room {
   type: string;
   floor: number;
   available: boolean;
+  isActive: boolean;
 }
 
 export interface Booking {
@@ -96,4 +97,19 @@ export const api = {
 
   getAvailableSlots: (roomId: number, date: string, duration = 60) =>
     request<Slot[]>(`${BASE}/rooms/${roomId}/available-slots?date=${date}&duration=${duration}`),
+
+  createRoom: (room: Partial<Room>) =>
+    request<Room>(`${BASE}/rooms`, {
+      method: 'POST',
+      body: JSON.stringify(room),
+    }),
+
+  updateRoom: (id: number, room: Room) =>
+    request<null>(`${BASE}/rooms/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(room),
+    }),
+
+  deleteRoom: (id: number) =>
+    request<null>(`${BASE}/rooms/${id}`, { method: 'DELETE' }),
 };

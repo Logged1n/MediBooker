@@ -562,9 +562,21 @@ function RoomsPage({
   loading: boolean;
 }) {
   const [filter, setFilter] = useState('all');
-  const filtered = rooms.filter((r) =>
-    filter === 'all' ? true : filter === 'available' ? r.available : !r.available
-  );
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedType, setSelectedType] = useState('all');
+
+  const filtered = rooms.filter((r) => {
+    const matchesStatus =
+      filter === 'all' ? true : filter === 'available' ? r.available : !r.available;
+    const matchesSearch =
+      r.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      r.floor.toString() === searchTerm;
+    const matchesType = selectedType === 'all' ? true : r.type === selectedType;
+
+    return matchesStatus && matchesSearch && matchesType;
+  });
+
+  const types = ['all', ...Array.from(new Set(rooms.map((r) => r.type)))];
 
   return (
     <div className="dashboard">
@@ -572,25 +584,63 @@ function RoomsPage({
         <h1>Medical Rooms</h1>
         <p>Browse and book available rooms.</p>
       </div>
-      <div className="filter-bar">
-        {['all', 'available', 'occupied'].map((f) => (
-          <button
-            key={f}
-            className={`filter-btn ${filter === f ? 'active' : ''}`}
-            data-testid={`filter-${f}`}
-            onClick={() => setFilter(f)}
-          >
-            {f.charAt(0).toUpperCase() + f.slice(1)}
-          </button>
-        ))}
+
+      <div className="filter-section">
+        <div className="search-bar">
+          <span className="search-icon">🔍</span>
+          <input
+            type="text"
+            placeholder="Search by room name or floor..."
+            value={searchTerm}
+            data-testid="search-rooms"
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
+
+        <div className="filters-container">
+          <div className="filter-group">
+            <span className="filter-label">Availability:</span>
+            <div className="filter-bar">
+              {['all', 'available', 'occupied'].map((f) => (
+                <button
+                  key={f}
+                  className={`filter-btn ${filter === f ? 'active' : ''}`}
+                  data-testid={`filter-${f}`}
+                  onClick={() => setFilter(f)}
+                >
+                  {f.charAt(0).toUpperCase() + f.slice(1)}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="filter-group">
+            <span className="filter-label">Type:</span>
+            <select
+              className="filter-select"
+              data-testid="filter-type"
+              value={selectedType}
+              onChange={(e) => setSelectedType(e.target.value)}
+            >
+              {types.map((t) => (
+                <option key={t} value={t}>
+                  {t === 'all' ? 'All Types' : t}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
       </div>
+
       {loading ? (
         <p style={{ color: '#888', padding: '1rem' }}>Loading rooms...</p>
       ) : (
         <div className="rooms-grid rooms-grid-full">
-          {filtered.map((room) => (
-            <RoomCard key={room.id} room={room} onBook={onBook} />
-          ))}
+          {filtered.length > 0 ? (
+            filtered.map((room) => <RoomCard key={room.id} room={room} onBook={onBook} />)
+          ) : (
+            <div className="no-results">No rooms match your search criteria.</div>
+          )}
         </div>
       )}
     </div>
@@ -617,51 +667,203 @@ function MyBookingsPage({
   );
 }
 
+function RoomManagementModal({
+  room,
+  onClose,
+  onSaved,
+}: {
+  room: Partial<Room> | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState(room?.name ?? '');
+  const [type, setType] = useState(room?.type ?? 'Examination');
+  const [floor, setFloor] = useState(room?.floor ?? 1);
+  const [isActive, setIsActive] = useState(room?.isActive ?? true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+    setSubmitting(true);
+    try {
+      if (room?.id) {
+        await api.updateRoom(room.id, { id: room.id, name, type, floor, isActive } as Room);
+      } else {
+        await api.createRoom({ name, type, floor, isActive });
+      }
+      onSaved();
+      onClose();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2>{room?.id ? 'Edit Room' : 'Add New Room'}</h2>
+          <button className="modal-close" onClick={onClose}>x</button>
+        </div>
+        {error && <div className="booking-error">{error}</div>}
+        <form className="modal-form" onSubmit={handleSubmit}>
+          <label>
+            Room Name
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              data-testid="admin-room-name"
+            />
+          </label>
+          <label>
+            Type
+            <select
+              className="filter-select"
+              value={type}
+              onChange={(e) => setType(e.target.value)}
+              data-testid="admin-room-type"
+            >
+              {['Examination', 'Surgery', 'Consultation', 'Radiology', 'ICU'].map((t) => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Floor
+            <input
+              type="number"
+              value={floor}
+              onChange={(e) => setFloor(Number(e.target.value))}
+              required
+              data-testid="admin-room-floor"
+            />
+          </label>
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={isActive}
+              onChange={(e) => setIsActive(e.target.checked)}
+              data-testid="admin-room-active"
+            />
+            Room is active (available for bookings)
+          </label>
+          <button type="submit" className="btn-confirm" disabled={submitting} data-testid="btn-save-room">
+            {submitting ? 'Saving...' : 'Save Room'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function AdminPage({
   allBookings,
+  rooms,
   onCancel,
+  onRoomsChange,
   loading,
 }: {
   allBookings: Booking[];
+  rooms: Room[];
   onCancel: (id: number) => void;
+  onRoomsChange: () => void;
   loading: boolean;
 }) {
+  const [editingRoom, setEditingRoom] = useState<Partial<Room> | null>(null);
+  const [showRoomModal, setShowRoomModal] = useState(false);
+
+  async function handleDeleteRoom(id: number) {
+    if (!confirm('Are you sure you want to delete this room?')) return;
+    try {
+      await api.deleteRoom(id);
+      onRoomsChange();
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+
   return (
     <div className="dashboard">
       <div className="page-title">
         <h1>Admin Panel</h1>
         <p>Manage rooms and view all reservations.</p>
       </div>
-      <div className="admin-grid" data-testid="admin-grid">
-        <div className="admin-card">
-          <div className="admin-card-icon">🏥</div>
-          <div className="admin-card-title">Manage Rooms</div>
-          <div className="admin-card-desc">Add, edit, and remove medical rooms from the system.</div>
-          <button className="btn-admin">Open</button>
+      
+      <section className="section">
+        <div className="section-header">
+          <h2>Medical Rooms</h2>
+          <button 
+            className="btn-admin" 
+            style={{ marginLeft: 'auto' }}
+            onClick={() => { setEditingRoom(null); setShowRoomModal(true); }}
+            data-testid="btn-add-room"
+          >
+            + Add New Room
+          </button>
         </div>
-        <div className="admin-card">
-          <div className="admin-card-icon">📅</div>
-          <div className="admin-card-title">All Reservations</div>
-          <div className="admin-card-desc">View and manage all bookings across the facility.</div>
-          <button className="btn-admin">Open</button>
+        <div className="table-wrapper">
+          <table className="bookings-table" data-testid="admin-rooms-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Floor</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rooms.map(r => (
+                <tr key={r.id} className="booking-row">
+                  <td>{r.name}</td>
+                  <td>{r.type}</td>
+                  <td>{r.floor}</td>
+                  <td>
+                    <span className={`status-badge ${r.isActive ? 'status-completed' : 'status-cancelled'}`}>
+                      {r.isActive ? 'Active' : 'Inactive'}
+                    </span>
+                  </td>
+                  <td>
+                    <button 
+                      className="nav-link" 
+                      onClick={() => { setEditingRoom(r); setShowRoomModal(true); }}
+                      data-testid="btn-edit-room"
+                    >
+                      Edit
+                    </button>
+                    <button 
+                      className="btn-cancel" 
+                      onClick={() => handleDeleteRoom(r.id)}
+                      data-testid="btn-delete-room"
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-        <div className="admin-card">
-          <div className="admin-card-icon">👥</div>
-          <div className="admin-card-title">User Management</div>
-          <div className="admin-card-desc">Manage doctor accounts and access permissions.</div>
-          <button className="btn-admin">Open</button>
-        </div>
-        <div className="admin-card">
-          <div className="admin-card-icon">📊</div>
-          <div className="admin-card-title">Reports</div>
-          <div className="admin-card-desc">View usage statistics and scheduling analytics.</div>
-          <button className="btn-admin">Open</button>
-        </div>
-      </div>
+      </section>
+
       <section className="section">
         <div className="section-header"><h2>All Reservations</h2></div>
         <BookingsTable bookings={allBookings} loading={loading} onCancel={onCancel} showCancel />
       </section>
+
+      {showRoomModal && (
+        <RoomManagementModal 
+          room={editingRoom} 
+          onClose={() => setShowRoomModal(false)} 
+          onSaved={onRoomsChange} 
+        />
+      )}
     </div>
   );
 }
@@ -785,7 +987,13 @@ export default function App() {
       <MyBookingsPage bookings={myBookings} onCancel={handleCancel} loading={loadingMyBookings} />
     ),
     Admin: (
-      <AdminPage allBookings={todayBookings} onCancel={handleCancel} loading={loadingAll} />
+      <AdminPage
+        allBookings={todayBookings}
+        rooms={rooms}
+        onCancel={handleCancel}
+        onRoomsChange={fetchRooms}
+        loading={loadingAll}
+      />
     ),
   };
 

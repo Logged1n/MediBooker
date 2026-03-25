@@ -40,8 +40,34 @@ public class RoomsController : ControllerBase
             r.Name,
             r.Type,
             r.Floor,
+            r.IsActive,
             available = r.IsActive && !occupiedRoomIds.Contains(r.Id)
         }));
+    }
+
+    [HttpPost]
+    [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
+    public IActionResult Create([FromBody] Room room)
+    {
+        _roomRepo.Add(room);
+        return CreatedAtAction(nameof(GetAll), new { id = room.Id }, room);
+    }
+
+    [HttpPut("{id:int}")]
+    [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
+    public IActionResult Update(int id, [FromBody] Room room)
+    {
+        if (id != room.Id) return BadRequest();
+        _roomRepo.Update(room);
+        return NoContent();
+    }
+
+    [HttpDelete("{id:int}")]
+    [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
+    public IActionResult Delete(int id)
+    {
+        _roomRepo.Delete(id);
+        return NoContent();
     }
 
     [HttpGet("{id:int}/schedule")]
