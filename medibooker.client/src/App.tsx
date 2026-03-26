@@ -8,6 +8,11 @@ interface CurrentUser {
   role: string;
 }
 
+function localDateStr(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 const roomTypeIcon: Record<string, string> = {
   Examination: '\u{1F52C}',
   Surgery: '\u{1F3E5}',
@@ -215,7 +220,7 @@ function Navbar({
       <div className="navbar-user">
         <span className="user-avatar">👤</span>
         <span className="user-name" data-testid="user-name">{currentUser.displayName}</span>
-        <span className="user-role">{currentUser.role}</span>
+        <span className="user-role" data-testid="user-role">{currentUser.role}</span>
         <button className="btn-logout" data-testid="btn-logout" onClick={onLogout}>Logout</button>
       </div>
     </nav>
@@ -320,8 +325,14 @@ function BookingModal({
   const [slots, setSlots] = useState<Slot[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
 
+  const today = localDateStr();
+
   useEffect(() => {
     if (!date) {
+      setSlots([]);
+      return;
+    }
+    if (date < today) {
       setSlots([]);
       return;
     }
@@ -331,7 +342,7 @@ function BookingModal({
       .then((s) => setSlots(s ?? []))
       .catch(() => setSlots([]))
       .finally(() => setLoadingSlots(false));
-  }, [date, room.id]);
+  }, [date, room.id, today]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -350,8 +361,6 @@ function BookingModal({
       setSubmitting(false);
     }
   }
-
-  const today = new Date().toISOString().split('T')[0];
 
   return (
     <div className="modal-overlay" data-testid="booking-modal" onClick={onClose}>
@@ -891,7 +900,7 @@ export default function App() {
   const [loadingMyBookings, setLoadingMyBookings] = useState(false);
   const [loadingAll, setLoadingAll] = useState(true);
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = localDateStr();
 
   const fetchRooms = useCallback(async () => {
     setLoadingRooms(true);
@@ -964,6 +973,7 @@ export default function App() {
   }
 
   function handleBooked() {
+    fetchRooms();
     fetchMyBookings();
     fetchTodayBookings();
   }

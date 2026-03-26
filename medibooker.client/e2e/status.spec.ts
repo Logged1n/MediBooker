@@ -100,7 +100,7 @@ test('rezerwacja trwająca teraz ma status active', async ({ page }) => {
   await page.getByTestId('nav-my-bookings').click();
 
   // Rezerwacja Room 302 powinna mieć status "active"
-  const activeRow = page.getByTestId('booking-row').filter({ hasText: 'Room 302' });
+  const activeRow = page.getByTestId('booking-row').filter({ hasText: 'Room 302' }).filter({ hasText: 'active' });
   await expect(activeRow).toBeVisible();
   await expect(activeRow).toContainText('active');
 });
@@ -135,7 +135,7 @@ test('rezerwacja zakończona dzisiaj ma status completed', async ({ page }) => {
   await page.getByTestId('nav-my-bookings').click();
 
   // Rezerwacja Room 210 powinna mieć status "completed"
-  const completedRow = page.getByTestId('booking-row').filter({ hasText: 'Room 210' });
+  const completedRow = page.getByTestId('booking-row').filter({ hasText: 'Room 210' }).filter({ hasText: 'completed' });
   await expect(completedRow).toBeVisible();
   await expect(completedRow).toContainText('completed');
 });
