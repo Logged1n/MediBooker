@@ -1,0 +1,18 @@
+{
+  "cookies": [],
+  "origins": [
+    {
+      "origin": "https://localhost:63558",
+      "localStorage": [
+        {
+          "name": "token",
+          "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy93cy8yMDA1LzA1L2lkZW50aXR5L2NsYWltcy9uYW1laWRlbnRpZmllciI6ImRyLWtvd2Fsc2tpIiwiaHR0cDovL3NjaGVtYXMueG1sc29hcC5vcmcvd3MvMjAwNS8wNS9pZGVudGl0eS9jbGFpbXMvbmFtZSI6ImRyLWtvd2Fsc2tpIiwiaHR0cDovL3NjaGVtYXMubWljcm9zb2Z0LmNvbS93cy8yMDA4LzA2L2lkZW50aXR5L2NsYWltcy9yb2xlIjoiRG9jdG9yIiwiZGlzcGxheU5hbWUiOiJEci4gS293YWxza2kiLCJleHAiOjE3Nzg1NjAwMDYsImlzcyI6Im1lZGlib29rZXIiLCJhdWQiOiJtZWRpYm9va2VyIn0.Jcv_3Iq0Q56mFm_ky9xetumZViNTqE_aio1oab-gWQo"
+        },
+        {
+          "name": "currentUser",
+          "value": "{\"doctorId\":\"dr-kowalski\",\"displayName\":\"Dr. Kowalski\",\"role\":\"Doctor\"}"
+        }
+      ]
+    }
+  ]
+}
