@@ -1,6 +1,7 @@
 ﻿using MediBooker.Server.Controllers;
 using MediBooker.Server.Models;
 using MediBooker.Server.Services;
+using MediBooker.Server.Validators;
 using MediBooker.UnitTests.Fakes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -25,7 +26,10 @@ public class BookingsControllerTests
         var service = new BookingService(
             bookingRepo ?? new FakeBookingRepository(),
             roomRepo ?? new FakeRoomRepository(ActiveRoom),
-            new FakeDateTimeProvider(Today));
+            new FakeDateTimeProvider(Today),
+            new WorkingHoursValidator(),
+            new MinimumLeadTimeValidator(),
+            new MaintenanceBreakValidator());
 
         var sut = new BookingsController(service, roomRepo ?? new FakeRoomRepository(ActiveRoom), new FakeDateTimeProvider(Today));
         var claims = new[] { new Claim(ClaimTypes.NameIdentifier, userId) };

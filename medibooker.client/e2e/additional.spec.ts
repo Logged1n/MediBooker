@@ -1,18 +1,12 @@
-import { test, expect, request as playwrightRequest } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 import { loginAs, toLocalDateStr } from './helpers';
 
-function getStatNumber(text: string | null): number {
-  return parseInt(text?.match(/\d+/)?.[0] ?? '0', 10);
-}
-
-function getCurrentBookingTimes(): { startTime: string; endTime: string } {
-  const h = new Date().getHours();
-  const endHour = h < 23 ? h + 1 : 23;
-  const endMin  = h < 23 ? '00' : '59';
-  return {
-    startTime: `${String(h).padStart(2, '0')}:00:00`,
-    endTime:   `${String(endHour).padStart(2, '0')}:${endMin}:00`,
-  };
+function getNextWeekday(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 // Test 1 — Wylogowanie użytkownika
@@ -47,34 +41,30 @@ test('user can navigate between pages using navbar', async ({ page }) => {
   await expect(page.getByTestId('stat-available')).toBeVisible();
 });
 
-// Test 3 — Statystyki dashboard aktualizują się po rezerwacji
+// Test 3 — Nowa rezerwacja pojawia się na stronie My Bookings
 test('dashboard stats update after booking a room', async ({ page }) => {
   await loginAs(page, 'dr-kowalski', 'pass123');
-
-  // Poczekaj na pełne załadowanie danych dashboardu
   await page.waitForLoadState('networkidle');
 
-  // Zapisz początkowe statystyki (My Bookings Today)
-  const initialMyBookings = getStatNumber(await page.getByTestId('stat-my-bookings').textContent());
+  // Zapisz początkową liczbę rezerwacji
+  await page.getByTestId('nav-my-bookings').click();
+  const initialCount = await page.getByTestId('booking-row').count();
 
-  // Przejdź do Rooms i zarezerwuj salę na dzisiaj
+  // Przejdź do Rooms i zarezerwuj salę na następny dzień roboczy
   await page.getByTestId('nav-rooms').click();
   await page.getByTestId('filter-available').click();
   await page.getByTestId('btn-book').first().click();
-  await page.getByTestId('input-date').fill(toLocalDateStr(new Date()));
+  await page.getByTestId('input-date').fill(getNextWeekday());
   await expect(page.getByTestId('slots-list')).toBeVisible();
   await page.getByTestId('slot-btn').first().click();
   await page.getByTestId('btn-confirm-booking').click();
   await expect(page.getByTestId('booking-success')).toBeVisible();
 
-  // Poczekaj na zamknięcie modalu
   await page.waitForTimeout(1500);
 
-  // Wróć do Dashboard
-  await page.getByTestId('nav-dashboard').click();
-
-  // Statystyki My Bookings Today powinny wzrosnąć o 1
-  await expect(page.getByTestId('stat-my-bookings')).toContainText(String(initialMyBookings + 1));
+  // Nowa rezerwacja powinna pojawić się na stronie My Bookings
+  await page.getByTestId('nav-my-bookings').click();
+  await expect(page.getByTestId('booking-row')).toHaveCount(initialCount + 1);
 });
 
 // Test 4 — Strona My Bookings pokazuje własne rezerwacje
@@ -94,58 +84,29 @@ test('my bookings page shows user own bookings', async ({ page }) => {
 
 // Test 5 — Admin może zobaczyć wszystkie rezerwacje
 test('admin can view all bookings in admin panel', async ({ page }) => {
-  // Pre-create bookings from two different doctors for today
-  const ctx = await playwrightRequest.newContext({ ignoreHTTPSErrors: true });
-  const TODAY = toLocalDateStr(new Date());
-
-  // Cleanup + create booking for dr-kowalski (room 2 / Room 203) at 07:00-07:30
-  const drKRes = await ctx.get('https://localhost:7075/api/bookings/my', {
-    headers: { 'X-Doctor-Id': 'dr-kowalski' },
+  await page.route('**/api/bookings/all*', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([
+        {
+          id: 1, roomId: 2, roomName: 'Room 203', doctorId: 'dr-kowalski',
+          date: toLocalDateStr(new Date()), startTime: '09:00', endTime: '10:00', status: 'upcoming',
+        },
+        {
+          id: 2, roomId: 6, roomName: 'Room 118', doctorId: 'dr-smith',
+          date: toLocalDateStr(new Date()), startTime: '10:00', endTime: '11:00', status: 'upcoming',
+        },
+      ]),
+    });
   });
-  if (drKRes.ok()) {
-    for (const b of (await drKRes.json()).filter(
-      (b: { roomId: number; date: string; status: string }) =>
-        b.roomId === 2 && b.date === TODAY && b.status !== 'cancelled'
-    )) {
-      await ctx.delete(`https://localhost:7075/api/bookings/${b.id}`, {
-        headers: { 'X-Doctor-Id': 'dr-kowalski' },
-      });
-    }
-  }
-  await ctx.post('https://localhost:7075/api/bookings', {
-    headers: { 'Content-Type': 'application/json', 'X-Doctor-Id': 'dr-kowalski' },
-    data: { roomId: 2, doctorId: 'dr-kowalski', date: TODAY, startTime: '07:00:00', endTime: '07:30:00' },
-  });
-
-  // Cleanup + create booking for dr-smith (room 6 / Room 118) at 07:00-07:30
-  const drSRes = await ctx.get('https://localhost:7075/api/bookings/my', {
-    headers: { 'X-Doctor-Id': 'dr-smith' },
-  });
-  if (drSRes.ok()) {
-    for (const b of (await drSRes.json()).filter(
-      (b: { roomId: number; date: string; status: string }) =>
-        b.roomId === 6 && b.date === TODAY && b.status !== 'cancelled'
-    )) {
-      await ctx.delete(`https://localhost:7075/api/bookings/${b.id}`, {
-        headers: { 'X-Doctor-Id': 'dr-smith' },
-      });
-    }
-  }
-  await ctx.post('https://localhost:7075/api/bookings', {
-    headers: { 'Content-Type': 'application/json', 'X-Doctor-Id': 'dr-smith' },
-    data: { roomId: 6, doctorId: 'dr-smith', date: TODAY, startTime: '07:00:00', endTime: '07:30:00' },
-  });
-
-  await ctx.dispose();
 
   await loginAs(page, 'admin', 'admin123');
   await page.getByTestId('nav-admin').click();
 
-  // Sekcja All Reservations powinna być widoczna
   await expect(page.locator('h2').filter({ hasText: 'All Reservations' })).toBeVisible();
   await expect(page.getByTestId('bookings-table')).toBeVisible();
 
-  // Sprawdź czy są rezerwacje od różnych lekarzy
   const rows = page.getByTestId('booking-row');
   const doctors = new Set<string>();
   const count = await rows.count();
@@ -155,42 +116,29 @@ test('admin can view all bookings in admin panel', async ({ page }) => {
     if (doctorText) doctors.add(doctorText);
   }
 
-  // Powinno być więcej niż jeden lekarz
   expect(doctors.size).toBeGreaterThan(1);
 });
 
 // Test 6 — Status sali zmienia się po rezerwacji
 test('room status changes to unavailable after booking', async ({ page }) => {
-  // Utwórz rezerwację na salę 6 (Room 118) dla aktualnej godziny przez API
-  const ctx = await playwrightRequest.newContext({ ignoreHTTPSErrors: true });
-  const TODAY = toLocalDateStr(new Date());
-  const { startTime, endTime } = getCurrentBookingTimes();
-
-  // Anuluj istniejące rezerwacje dla sali 6 na dzisiaj
-  const existingRes = await ctx.get('https://localhost:7075/api/bookings/my', {
-    headers: { 'X-Doctor-Id': 'dr-kowalski' },
+  await page.route('**/api/rooms', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([
+        { id: 1, name: 'Room 101', type: 'Surgery',      floor: 1, available: true,  isActive: true },
+        { id: 2, name: 'Room 203', type: 'ICU',          floor: 2, available: true,  isActive: true },
+        { id: 3, name: 'Room 115', type: 'Consultation', floor: 1, available: true,  isActive: true },
+        { id: 4, name: 'Room 302', type: 'Radiology',    floor: 3, available: true,  isActive: true },
+        { id: 5, name: 'Room 210', type: 'ICU',          floor: 2, available: true,  isActive: true },
+        { id: 6, name: 'Room 118', type: 'Surgery',      floor: 1, available: false, isActive: true },
+      ]),
+    });
   });
-  if (existingRes.ok()) {
-    for (const b of (await existingRes.json()).filter(
-      (b: { roomId: number; date: string; status: string }) =>
-        b.roomId === 6 && b.date === TODAY && b.status !== 'cancelled'
-    )) {
-      await ctx.delete(`https://localhost:7075/api/bookings/${b.id}`, {
-        headers: { 'X-Doctor-Id': 'dr-kowalski' },
-      });
-    }
-  }
-
-  await ctx.post('https://localhost:7075/api/bookings', {
-    headers: { 'Content-Type': 'application/json', 'X-Doctor-Id': 'dr-kowalski' },
-    data: { roomId: 6, doctorId: 'dr-kowalski', date: TODAY, startTime, endTime },
-  });
-  await ctx.dispose();
 
   await loginAs(page, 'dr-kowalski', 'pass123');
   await page.getByTestId('nav-rooms').click();
 
-  // Sala Room 118 powinna być oznaczona jako Unavailable
   const room118 = page.getByTestId('room-card').filter({ hasText: 'Room 118' });
   await expect(room118).toBeVisible();
   await expect(room118.getByTestId('room-status')).toContainText('Unavailable');

@@ -91,18 +91,26 @@ test('modal rezerwacji wyświetla dostępne sloty po wybraniu daty', async ({ pa
 test('lekarz nie może anulować rezerwacji należącej do innego lekarza', async () => {
   const ctx = await playwrightRequest.newContext({ ignoreHTTPSErrors: true });
 
-  // 1. Utwórz rezerwację jako dr-smith — unikalna data (7 dni + bieżące sekundy jako offset godziny)
+  // 1. Zaloguj jako dr-smith i pobierz token JWT
+  const smithLoginRes = await ctx.post('https://localhost:7075/api/auth/login', {
+    data: { username: 'dr-smith', password: 'pass123' },
+  });
+  expect(smithLoginRes.ok()).toBeTruthy();
+  const { token: smithToken } = await smithLoginRes.json();
+
+  // 2. Utwórz rezerwację jako dr-smith — unikalna data (7 dni + bieżące sekundy jako offset godziny)
   //    Zapobiega konfliktom gdy serwer jest reużywany między uruchomieniami testów
   const d = new Date();
   d.setDate(d.getDate() + 7);
   const futureDate = toLocalDateStr(d);
-  const startHour = 8 + (new Date().getSeconds() % 9); // losowa godzina 8-16
+  let startHour = 8 + (new Date().getSeconds() % 9); // losowa godzina 8-16
+  if (startHour === 13) startHour = 15; // omiń przerwę konserwacyjną 13:00–14:00
   const startTime = `${String(startHour).padStart(2, '0')}:00:00`;
   const endTime   = `${String(startHour + 1).padStart(2, '0')}:00:00`;
 
   // Anuluj istniejące rezerwacje dr-smitha dla sali 2 w tym dniu, aby uniknąć konfliktu
   const existingRes = await ctx.get('https://localhost:7075/api/bookings/my', {
-    headers: { 'X-Doctor-Id': 'dr-smith' },
+    headers: { 'Authorization': `Bearer ${smithToken}` },
   });
   if (existingRes.ok()) {
     const existing = await existingRes.json();
@@ -112,13 +120,13 @@ test('lekarz nie może anulować rezerwacji należącej do innego lekarza', asyn
     );
     for (const b of conflicts) {
       await ctx.delete(`https://localhost:7075/api/bookings/${b.id}`, {
-        headers: { 'X-Doctor-Id': 'dr-smith' },
+        headers: { 'Authorization': `Bearer ${smithToken}` },
       });
     }
   }
 
   const createRes = await ctx.post('https://localhost:7075/api/bookings', {
-    headers: { 'Content-Type': 'application/json', 'X-Doctor-Id': 'dr-smith' },
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${smithToken}` },
     data: {
       roomId: 2,
       doctorId: 'dr-smith',
@@ -130,14 +138,14 @@ test('lekarz nie może anulować rezerwacji należącej do innego lekarza', asyn
   expect(createRes.ok()).toBeTruthy();
   const booking = await createRes.json();
 
-  // 2. Zaloguj jako dr-kowalski i pobierz jego token JWT
+  // 3. Zaloguj jako dr-kowalski i pobierz jego token JWT
   const loginRes = await ctx.post('https://localhost:7075/api/auth/login', {
     data: { username: 'dr-kowalski', password: 'pass123' },
   });
   expect(loginRes.ok()).toBeTruthy();
   const { token } = await loginRes.json();
 
-  // 3. Spróbuj anulować rezerwację dr-smitha jako dr-kowalski (przez API z JWT)
+  // 4. Spróbuj anulować rezerwację dr-smitha jako dr-kowalski (przez API z JWT)
   const cancelRes = await ctx.delete(`https://localhost:7075/api/bookings/${booking.id}`, {
     headers: { 'Authorization': `Bearer ${token}` },
   });
@@ -145,12 +153,7 @@ test('lekarz nie może anulować rezerwacji należącej do innego lekarza', asyn
   // Backend powinien zwrócić 403 Forbidden
   expect(cancelRes.status()).toBe(403);
 
-  // 4. Rezerwacja nadal istnieje i ma status upcoming
-  // Weryfikacja przez dr-smith: jego booking nadal upcoming
-  const smithLoginRes = await ctx.post('https://localhost:7075/api/auth/login', {
-    data: { username: 'dr-smith', password: 'pass123' },
-  });
-  const { token: smithToken } = await smithLoginRes.json();
+  // 5. Rezerwacja nadal istnieje i ma status upcoming
   const smithBookingsRes = await ctx.get('https://localhost:7075/api/bookings/my', {
     headers: { 'Authorization': `Bearer ${smithToken}` },
   });

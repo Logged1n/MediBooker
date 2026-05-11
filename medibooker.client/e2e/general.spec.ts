@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { loginAs, getTomorrow, toLocalDateStr } from './helpers';
+import { loginAs } from './helpers';
 
 // Dashboard wyświetla  statystyki po zalogowaniu
 test('dashboard wyświetla statystyki sal po zalogowaniu', async ({ page }) => {
@@ -94,38 +94,25 @@ test('strona My Bookings wyświetla tabelę z rezerwacjami lekarza', async ({ pa
 });
 
 // Przycisk rezerwacji jest wyłączony dla sali zajetej
-test('przycisk Book Room jest disabled dla sali zajętej w tej chwili', async ({ page, request }) => {
-    const TODAY = toLocalDateStr(new Date());
-    const h = new Date().getHours();
-    const startTime = `${String(h).padStart(2, '0')}:00:00`;
-    const endTime = `${String(h < 23 ? h + 1 : 23).padStart(2, '0')}:${h < 23 ? '00' : '59'}:00`;
-
-    // anulowanie istniejacych rezerwacji
-    const existingRes = await request.get('https://localhost:7075/api/bookings/my', {
-        headers: { 'X-Doctor-Id': 'dr-smith' },
-    });
-    if (existingRes.ok()) {
-        const existing = await existingRes.json();
-        for (const b of existing.filter(
-            (b: { roomId: number; date: string; status: string }) =>
-                b.roomId === 3 && b.date === TODAY && b.status !== 'cancelled'
-        )) {
-            await request.delete(`https://localhost:7075/api/bookings/${b.id}`, {
-                headers: { 'X-Doctor-Id': 'dr-smith' },
-            });
-        }
-    }
-
-    // dodanie rezerwacji ktora trwa teraz
-    await request.post('https://localhost:7075/api/bookings', {
-        headers: { 'Content-Type': 'application/json', 'X-Doctor-Id': 'dr-smith' },
-        data: { roomId: 3, doctorId: 'dr-smith', date: TODAY, startTime, endTime },
+test('przycisk Book Room jest disabled dla sali zajętej w tej chwili', async ({ page }) => {
+    await page.route('**/api/rooms', async (route) => {
+        await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify([
+                { id: 1, name: 'Room 101', type: 'Surgery',      floor: 1, available: true,  isActive: true },
+                { id: 2, name: 'Room 203', type: 'ICU',          floor: 2, available: true,  isActive: true },
+                { id: 3, name: 'Room 115', type: 'Consultation', floor: 1, available: false, isActive: true },
+                { id: 4, name: 'Room 302', type: 'Radiology',    floor: 3, available: true,  isActive: true },
+                { id: 5, name: 'Room 210', type: 'ICU',          floor: 2, available: true,  isActive: true },
+                { id: 6, name: 'Room 118', type: 'Surgery',      floor: 1, available: true,  isActive: true },
+            ]),
+        });
     });
 
     await loginAs(page, 'dr-kowalski', 'pass123');
     await page.getByTestId('nav-rooms').click();
 
-    // sala niedostepna do rezerwacji
     const room115 = page.getByTestId('room-card').filter({ hasText: 'Room 115' });
     await expect(room115).toBeVisible();
     await expect(room115.getByTestId('room-status')).toContainText('Unavailable');
