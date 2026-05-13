@@ -1,5 +1,6 @@
 using MediBooker.Server.Models;
 using MediBooker.Server.Services;
+using MediBooker.Server.Validators;
 using MediBooker.UnitTests.Fakes;
 
 namespace MediBooker.UnitTests;
@@ -24,7 +25,10 @@ public class BookingServiceTests
         return new BookingService(
             bookingRepo ?? new FakeBookingRepository(),
             roomRepo    ?? new FakeRoomRepository(ActiveRoom, InactiveRoom),
-            new FakeDateTimeProvider(today ?? Today));
+            new FakeDateTimeProvider(today ?? Today),
+            new WorkingHoursValidator(),
+            new MinimumLeadTimeValidator(),
+            new MaintenanceBreakValidator());
     }
 
     private static CreateBookingRequest ValidRequest(
@@ -531,7 +535,8 @@ public class BookingServiceTests
 
         var result = service.GetAvailableSlots(1, Tomorrow, 60);
 
-        Assert.Equal(10, result.Count);
+        // 8:00–20:00 = 12 slots of 60 min, minus 1 for maintenance break (13:00–14:00) = 11
+        Assert.Equal(11, result.Count);
     }
 
     [Fact]
@@ -579,7 +584,8 @@ public class BookingServiceTests
     [Fact]
     public void GetAvailableSlots_FullyBookedDay_ReturnsEmptyList()
     {
-        var bookings = Enumerable.Range(8, 10).Select(hour => new Booking
+        // Cover entire workday 8:00–20:00 with 12 hourly bookings
+        var bookings = Enumerable.Range(8, 12).Select(hour => new Booking
         {
             Id = hour,
             RoomId = 1,
@@ -613,7 +619,7 @@ public class BookingServiceTests
 
         var result = service.GetAvailableSlots(1, Tomorrow, 60);
 
-        Assert.Equal(new TimeOnly(18, 0), result.Last().End);
+        Assert.Equal(new TimeOnly(20, 0), result.Last().End);
     }
 
     [Fact]
@@ -623,7 +629,8 @@ public class BookingServiceTests
 
         var result = service.GetAvailableSlots(1, Tomorrow, 30);
 
-        Assert.Equal(20, result.Count);
+        // 8:00–20:00 = 24 slots of 30 min, minus 2 for maintenance break (13:00–13:30, 13:30–14:00) = 22
+        Assert.Equal(22, result.Count);
     }
 
     [Fact]
@@ -644,9 +651,10 @@ public class BookingServiceTests
 
         var result = service.GetAvailableSlots(1, Tomorrow, 60);
 
-        Assert.Contains(result, s => s.Start == new TimeOnly(11, 0)); // before booking
-        Assert.Contains(result, s => s.Start == new TimeOnly(13, 0)); // after booking
-        Assert.DoesNotContain(result, s => s.Start == new TimeOnly(12, 0));
+        Assert.Contains(result, s => s.Start == new TimeOnly(11, 0));    // before booking
+        Assert.Contains(result, s => s.Start == new TimeOnly(14, 0));    // after maintenance break
+        Assert.DoesNotContain(result, s => s.Start == new TimeOnly(12, 0)); // booked
+        Assert.DoesNotContain(result, s => s.Start == new TimeOnly(13, 0)); // maintenance break
     }
 
     [Fact]

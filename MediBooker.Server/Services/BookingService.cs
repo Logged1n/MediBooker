@@ -1,4 +1,5 @@
 using MediBooker.Server.Models;
+using MediBooker.Server.Validators;
 
 namespace MediBooker.Server.Services;
 
@@ -10,15 +11,24 @@ public class BookingService
     private readonly IBookingRepository _bookingRepo;
     private readonly IRoomRepository _roomRepo;
     private readonly IDateTimeProvider _dateTime;
+    private readonly WorkingHoursValidator _workingHoursValidator;
+    private readonly MinimumLeadTimeValidator _minimumLeadTimeValidator;
+    private readonly MaintenanceBreakValidator _maintenanceBreakValidator;
 
     public BookingService(
         IBookingRepository bookingRepo,
         IRoomRepository roomRepo,
-        IDateTimeProvider dateTime)
+        IDateTimeProvider dateTime,
+        WorkingHoursValidator workingHoursValidator,
+        MinimumLeadTimeValidator minimumLeadTimeValidator,
+        MaintenanceBreakValidator maintenanceBreakValidator)
     {
         _bookingRepo = bookingRepo;
         _roomRepo    = roomRepo;
         _dateTime    = dateTime;
+        _workingHoursValidator    = workingHoursValidator;
+        _minimumLeadTimeValidator = minimumLeadTimeValidator;
+        _maintenanceBreakValidator = maintenanceBreakValidator;
     }
 
     public Booking CreateBooking(CreateBookingRequest request)
@@ -42,6 +52,20 @@ public class BookingService
 
         if (durationMinutes > MaxDurationMinutes)
             throw new ArgumentException($"Booking cannot exceed {MaxDurationMinutes / 60} hours.");
+
+        var bookingDateTime = request.Date.ToDateTime(TimeOnly.MinValue);
+        var startSpan = request.StartTime.ToTimeSpan();
+        var endSpan   = request.EndTime.ToTimeSpan();
+
+        if (!_workingHoursValidator.IsValid(bookingDateTime, startSpan, endSpan))
+            throw new ArgumentException("Bookings are only allowed on weekdays between 08:00 and 20:00.");
+
+        var currentDateTime = _dateTime.Today.ToDateTime(_dateTime.Now);
+        if (!_minimumLeadTimeValidator.IsValid(currentDateTime, bookingDateTime, startSpan))
+            throw new ArgumentException("Booking must be made at least 60 minutes in advance.");
+
+        if (!_maintenanceBreakValidator.IsValid(startSpan, endSpan))
+            throw new ArgumentException("Bookings cannot overlap with the maintenance break (13:00–14:00).");
 
         var hasConflict = _bookingRepo
             .GetForRoom(request.RoomId, request.Date)
@@ -100,7 +124,7 @@ public class BookingService
     }
 
     private static readonly TimeOnly WorkdayStart = new(8, 0);
-    private static readonly TimeOnly WorkdayEnd = new(18, 0);
+    private static readonly TimeOnly WorkdayEnd = new(20, 0);
 
     public IReadOnlyList<(TimeOnly Start, TimeOnly End)> GetAvailableSlots(
         int roomId, DateOnly date, int slotDurationMinutes)
@@ -119,14 +143,18 @@ public class BookingService
         var available = new List<(TimeOnly Start, TimeOnly End)>();
         var slotStart = WorkdayStart;
 
-        while (slotStart.AddMinutes(slotDurationMinutes) <= WorkdayEnd)
+        while (slotStart.AddMinutes(slotDurationMinutes) > slotStart
+               && slotStart.AddMinutes(slotDurationMinutes) <= WorkdayEnd)
         {
             var slotEnd = slotStart.AddMinutes(slotDurationMinutes);
 
             var isOccupied = bookedSlots
                 .Any(b => slotStart < b.EndTime && slotEnd > b.StartTime);
 
-            if (!isOccupied)
+            var overlapsMaintenance = !_maintenanceBreakValidator.IsValid(
+                slotStart.ToTimeSpan(), slotEnd.ToTimeSpan());
+
+            if (!isOccupied && !overlapsMaintenance)
                 available.Add((slotStart, slotEnd));
 
             slotStart = slotStart.AddMinutes(slotDurationMinutes);

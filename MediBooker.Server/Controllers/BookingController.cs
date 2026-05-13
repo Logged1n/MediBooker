@@ -1,5 +1,6 @@
 using MediBooker.Server.Models;
 using MediBooker.Server.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 
@@ -7,6 +8,7 @@ namespace MediBooker.Server.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class BookingsController : ControllerBase
 {
     private readonly BookingService _bookingService;
@@ -21,9 +23,7 @@ public class BookingsController : ControllerBase
     }
 
     private string GetDoctorId()
-        => User.FindFirstValue(ClaimTypes.NameIdentifier)
-           ?? Request.Headers["X-Doctor-Id"].FirstOrDefault()
-           ?? "anonymous";
+        => User.FindFirstValue(ClaimTypes.NameIdentifier)!;
 
     private BookingStatus ComputeStatus(Booking b)
     {

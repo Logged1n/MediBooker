@@ -1,4 +1,9 @@
 import { defineConfig, devices } from '@playwright/test';
+import { fileURLToPath } from 'url';
+import path from 'path';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const AUTH_FILE = path.join(__dirname, 'e2e', '.auth', 'dr-kowalski.json');
 
 export default defineConfig({
   testDir: './e2e',
@@ -15,9 +20,29 @@ export default defineConfig({
     video: 'retain-on-failure',
   },
   projects: [
+    // Projekt setup — loguje się raz i zapisuje storageState
+    {
+      name: 'setup',
+      testMatch: '**/auth.setup.ts',
+      use: { ...devices['Desktop Chrome'] },
+    },
+
+    // Projekt główny — testy korzystające z loginAs() wewnętrznie
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
+      testIgnore: '**/state-management.spec.ts',
+    },
+
+    // Projekt z gotowym stanem uwierzytelnienia (storageState)
+    {
+      name: 'authenticated',
+      use: {
+        ...devices['Desktop Chrome'],
+        storageState: AUTH_FILE,
+      },
+      testMatch: '**/state-management.spec.ts',
+      dependencies: ['setup'],
     },
   ],
   webServer: [
