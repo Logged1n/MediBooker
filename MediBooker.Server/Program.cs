@@ -1,6 +1,6 @@
 using System.Text;
+using MediBooker.Server.Policies;
 using MediBooker.Server.Services;
-using MediBooker.Server.Validators;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 
@@ -16,9 +16,7 @@ builder.Services.AddSingleton<IBookingRepository, InMemoryBookingRepository>();
 builder.Services.AddSingleton<IRoomRepository, InMemoryRoomRepository>();
 builder.Services.AddSingleton<IUserRepository, InMemoryUserRepository>();
 builder.Services.AddSingleton<IDateTimeProvider, DateTimeProvider>();
-builder.Services.AddSingleton<WorkingHoursValidator>();
-builder.Services.AddSingleton<MinimumLeadTimeValidator>();
-builder.Services.AddSingleton<MaintenanceBreakValidator>();
+builder.Services.AddSingleton<BookingPolicy>();
 builder.Services.AddScoped<BookingService>();
 builder.Services.AddScoped<AuthService>();
 

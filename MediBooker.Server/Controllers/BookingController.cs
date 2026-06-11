@@ -26,17 +26,7 @@ public class BookingsController : ControllerBase
         => User.FindFirstValue(ClaimTypes.NameIdentifier)!;
 
     private BookingStatus ComputeStatus(Booking b)
-    {
-        if (b.Status == BookingStatus.Cancelled) return BookingStatus.Cancelled;
-
-        var today = _dateTime.Today;
-        var now   = _dateTime.Now;
-
-        if (b.Date < today) return BookingStatus.Completed;
-        if (b.Date == today && now >= b.EndTime)   return BookingStatus.Completed;
-        if (b.Date == today && now >= b.StartTime) return BookingStatus.Active;
-        return BookingStatus.Upcoming;
-    }
+        => b.ComputeCurrentStatus(_dateTime.Today, _dateTime.Now);
 
     private BookingResponseDto ToDto(Booking b)
     {
