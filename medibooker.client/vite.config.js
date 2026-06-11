@@ -34,7 +34,7 @@ if (!fs.existsSync(certFilePath) || !fs.existsSync(keyFilePath)) {
     }
 }
 
-const target = env["services__medibooker-server__https__0"] ?? 'https://localhost:7075';
+const target = env["services__medibooker-server__https__0"] ?? 'http://localhost:5099';
 
 // https://vitejs.dev/config/
 export default defineConfig({

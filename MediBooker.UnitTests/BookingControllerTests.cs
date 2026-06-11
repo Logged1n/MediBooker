@@ -1,7 +1,7 @@
-﻿using MediBooker.Server.Controllers;
+using MediBooker.Server.Controllers;
 using MediBooker.Server.Models;
+using MediBooker.Server.Policies;
 using MediBooker.Server.Services;
-using MediBooker.Server.Validators;
 using MediBooker.UnitTests.Fakes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -12,28 +12,24 @@ namespace MediBooker.Tests.Unit.Controllers;
 
 public class BookingsControllerTests
 {
-    private static readonly DateOnly Today = new(2026, 3, 10);
+    private static readonly DateOnly Today    = new(2026, 3, 10);
     private static readonly DateOnly Tomorrow = Today.AddDays(1);
 
     private static readonly Room ActiveRoom = new()
-    { Id = 1, Name = "Sala 101", Type = "Konsultacja", Floor = 1, IsActive = true };
+        { Id = 1, Name = "Sala 101", Type = "Konsultacja", Floor = 1, IsActive = true };
 
     private static BookingsController BuildSut(
         FakeBookingRepository? bookingRepo = null,
-        FakeRoomRepository? roomRepo = null,
+        FakeRoomRepository?    roomRepo    = null,
         string userId = "doc-kowalski")
     {
-        var service = new BookingService(
-            bookingRepo ?? new FakeBookingRepository(),
-            roomRepo ?? new FakeRoomRepository(ActiveRoom),
-            new FakeDateTimeProvider(Today),
-            new WorkingHoursValidator(),
-            new MinimumLeadTimeValidator(),
-            new MaintenanceBreakValidator());
+        var repo    = bookingRepo ?? new FakeBookingRepository();
+        var rooms   = roomRepo   ?? new FakeRoomRepository(ActiveRoom);
+        var service = new BookingService(repo, rooms, new FakeDateTimeProvider(Today), new BookingPolicy());
 
-        var sut = new BookingsController(service, roomRepo ?? new FakeRoomRepository(ActiveRoom), new FakeDateTimeProvider(Today));
-        var claims = new[] { new Claim(ClaimTypes.NameIdentifier, userId) };
-        var identity = new ClaimsIdentity(claims, "Test");
+        var sut = new BookingsController(service, rooms, new FakeDateTimeProvider(Today));
+        var identity = new ClaimsIdentity(
+            [new Claim(ClaimTypes.NameIdentifier, userId)], "Test");
         sut.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(identity) }
@@ -42,28 +38,30 @@ public class BookingsControllerTests
     }
 
     private static CreateBookingRequest ValidRequest(
-        int roomId = 1,
-        string doctorId = "doc-kowalski",
-        DateOnly? date = null,
-        TimeOnly? start = null,
-        TimeOnly? end = null) => new(
+        int       roomId   = 1,
+        string    doctorId = "doc-kowalski",
+        DateOnly? date     = null,
+        TimeOnly? start    = null,
+        TimeOnly? end      = null) => new(
             roomId,
             doctorId,
-            date ?? Tomorrow,
+            date  ?? Tomorrow,
             start ?? new TimeOnly(10, 0),
-            end ?? new TimeOnly(11, 0));
+            end   ?? new TimeOnly(11, 0));
+
+    // ── GetMyBookings ─────────────────────────────────────────────────────────
 
     [Fact]
     public void GetMyBookings_ReturnsOk()
     {
         var repo = new FakeBookingRepository(
-            new Booking { Id = 1, DoctorId = "doc-kowalski", RoomId = 1, Date = Tomorrow, Status = BookingStatus.Upcoming },
-            new Booking { Id = 2, DoctorId = "doc-kowalski", RoomId = 1, Date = Tomorrow, Status = BookingStatus.Completed });
+            Booking.Reconstitute(1, 1, "doc-kowalski", new TimeSlot(Tomorrow, new TimeOnly(9, 0),  new TimeOnly(10, 0)), BookingStatus.Upcoming),
+            Booking.Reconstitute(2, 1, "doc-kowalski", new TimeSlot(Tomorrow, new TimeOnly(11, 0), new TimeOnly(12, 0)), BookingStatus.Completed));
         var sut = BuildSut(bookingRepo: repo);
 
         var result = sut.GetMyBookings();
 
-        var ok = Assert.IsType<OkObjectResult>(result);
+        var ok   = Assert.IsType<OkObjectResult>(result);
         var body = Assert.IsAssignableFrom<IEnumerable<BookingResponseDto>>(ok.Value).ToList();
         Assert.Equal(2, body.Count);
         Assert.All(body, b => Assert.Equal("doc-kowalski", b.DoctorId));
@@ -76,10 +74,12 @@ public class BookingsControllerTests
 
         var result = sut.GetMyBookings();
 
-        var ok = Assert.IsType<OkObjectResult>(result);
+        var ok   = Assert.IsType<OkObjectResult>(result);
         var body = Assert.IsAssignableFrom<IEnumerable<BookingResponseDto>>(ok.Value);
         Assert.Empty(body);
     }
+
+    // ── Create ────────────────────────────────────────────────────────────────
 
     [Fact]
     public void Create_ValidRequest()
@@ -159,16 +159,10 @@ public class BookingsControllerTests
     [Fact]
     public void Create_ConflictingBooking_()
     {
-        var existing = new Booking
-        {
-            Id = 1,
-            RoomId = 1,
-            DoctorId = "doc-nowak",
-            Date = Tomorrow,
-            StartTime = new TimeOnly(9, 30),
-            EndTime = new TimeOnly(10, 30),
-            Status = BookingStatus.Upcoming
-        };
+        var existing = Booking.Reconstitute(
+            1, 1, "doc-nowak",
+            new TimeSlot(Tomorrow, new TimeOnly(9, 30), new TimeOnly(10, 30)),
+            BookingStatus.Upcoming);
         var sut = BuildSut(bookingRepo: new FakeBookingRepository(existing));
 
         var result = sut.Create(ValidRequest());
@@ -179,16 +173,10 @@ public class BookingsControllerTests
     [Fact]
     public void Create_CancelledBookingAtSameSlot()
     {
-        var cancelled = new Booking
-        {
-            Id = 1,
-            RoomId = 1,
-            DoctorId = "doc-nowak",
-            Date = Tomorrow,
-            StartTime = new TimeOnly(10, 0),
-            EndTime = new TimeOnly(11, 0),
-            Status = BookingStatus.Cancelled
-        };
+        var cancelled = Booking.Reconstitute(
+            1, 1, "doc-nowak",
+            new TimeSlot(Tomorrow, new TimeOnly(10, 0), new TimeOnly(11, 0)),
+            BookingStatus.Cancelled);
         var sut = BuildSut(bookingRepo: new FakeBookingRepository(cancelled));
 
         var result = sut.Create(ValidRequest());
@@ -200,17 +188,22 @@ public class BookingsControllerTests
     public void Create_AddsBookingToRepository()
     {
         var repo = new FakeBookingRepository();
-        var sut = BuildSut(bookingRepo: repo);
+        var sut  = BuildSut(bookingRepo: repo);
 
         sut.Create(ValidRequest());
 
         Assert.Single(repo.GetForDoctor("doc-kowalski"));
     }
 
+    // ── Cancel ────────────────────────────────────────────────────────────────
+
     [Fact]
     public void Cancel_OwnBooking_Returns204()
     {
-        var booking = new Booking { Id = 1, DoctorId = "doc-kowalski", Status = BookingStatus.Upcoming };
+        var booking = Booking.Reconstitute(
+            1, 1, "doc-kowalski",
+            new TimeSlot(Tomorrow, new TimeOnly(9, 0), new TimeOnly(10, 0)),
+            BookingStatus.Upcoming);
         var sut = BuildSut(bookingRepo: new FakeBookingRepository(booking));
 
         var result = sut.Cancel(1);
@@ -231,7 +224,10 @@ public class BookingsControllerTests
     [Fact]
     public void Cancel_OtherDoctorsBooking_Returns403()
     {
-        var booking = new Booking { Id = 1, DoctorId = "doc-nowak", Status = BookingStatus.Upcoming };
+        var booking = Booking.Reconstitute(
+            1, 1, "doc-nowak",
+            new TimeSlot(Tomorrow, new TimeOnly(9, 0), new TimeOnly(10, 0)),
+            BookingStatus.Upcoming);
         var sut = BuildSut(bookingRepo: new FakeBookingRepository(booking), userId: "doc-kowalski");
 
         var result = sut.Cancel(1);
@@ -242,7 +238,10 @@ public class BookingsControllerTests
     [Fact]
     public void Cancel_AlreadyCancelled_Returns400()
     {
-        var booking = new Booking { Id = 1, DoctorId = "doc-kowalski", Status = BookingStatus.Cancelled };
+        var booking = Booking.Reconstitute(
+            1, 1, "doc-kowalski",
+            new TimeSlot(Tomorrow, new TimeOnly(9, 0), new TimeOnly(10, 0)),
+            BookingStatus.Cancelled);
         var sut = BuildSut(bookingRepo: new FakeBookingRepository(booking));
 
         var result = sut.Cancel(1);
@@ -253,7 +252,10 @@ public class BookingsControllerTests
     [Fact]
     public void Cancel_CompletedBooking_Returns400()
     {
-        var booking = new Booking { Id = 1, DoctorId = "doc-kowalski", Status = BookingStatus.Completed };
+        var booking = Booking.Reconstitute(
+            1, 1, "doc-kowalski",
+            new TimeSlot(Tomorrow, new TimeOnly(9, 0), new TimeOnly(10, 0)),
+            BookingStatus.Completed);
         var sut = BuildSut(bookingRepo: new FakeBookingRepository(booking));
 
         var result = sut.Cancel(1);
